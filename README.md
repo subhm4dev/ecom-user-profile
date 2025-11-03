@@ -24,8 +24,8 @@ mvn spring-boot:run
 
 ## Endpoints
 
-- `POST /v1/profile` - Create or update profile
-- `GET /v1/profile/{userId}` - Get profile by userId
+- `POST /api/v1/profile` - Create or update profile
+- `GET /api/v1/profile/{userId}` - Get profile by userId
 
 ## Dependencies
 

@@ -1,11 +1,20 @@
 package com.ecom.profile.controller;
 
+import com.ecom.error.exception.BusinessException;
+import com.ecom.error.model.ErrorCode;
+import com.ecom.profile.model.request.ProfileRequest;
+import com.ecom.profile.model.response.ProfileResponse;
+import com.ecom.profile.security.JwtAuthenticationToken;
+import com.ecom.profile.service.UserProfileService;
+import com.ecom.response.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
@@ -32,19 +41,26 @@ import java.util.UUID;
  * 
  * <p>This service integrates with the Identity service (via user_id) but maintains
  * separate profile data, following microservice separation of concerns.
+ * 
+ * <p><b>Security:</b> JWT tokens are validated by JwtAuthenticationFilter.
+ * User context comes from validated JWT claims (source of truth).
+ * Gateway headers (X-User-Id, X-Roles) are hints only, not trusted for security.
  */
 @RestController
-@RequestMapping("/v1/profile")
+@RequestMapping("/api/v1/profile")
 @Tag(name = "User Profile", description = "User profile management endpoints")
-@SecurityRequirement(name = "bearerAuth")
+@RequiredArgsConstructor
+@Slf4j
 public class UserProfileController {
+
+    private final UserProfileService userProfileService;
 
     /**
      * Create or update user profile
      * 
      * <p>This endpoint creates a new profile or updates an existing one for the
-     * authenticated user. The user ID is extracted from the JWT token via Gateway
-     * headers (X-User-Id).
+     * authenticated user. The user ID is extracted from validated JWT claims
+     * (via JwtAuthenticationToken).
      * 
      * <p>Profile updates trigger a Kafka event (ProfileUpdated) that other services
      * can consume to sync profile changes.
@@ -58,16 +74,17 @@ public class UserProfileController {
         description = "Creates a new user profile or updates existing profile. Publishes ProfileUpdated event to Kafka."
     )
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<Object> createOrUpdateProfile(@Valid @RequestBody Object profileRequest) {
-        // TODO: Implement profile create/update logic
-        // 1. Extract userId from X-User-Id header (via tenant-context-starter)
-        // 2. Validate profileRequest DTO (fullName, phone, avatarUrl)
-        // 3. Check if profile exists for userId
-        // 4. Create new UserProfile entity or update existing one
-        // 5. Persist to database
-        // 6. Publish ProfileUpdated event to Kafka
-        // 7. Return profile response with status
-        return ResponseEntity.ok(null);
+    public ApiResponse<ProfileResponse> createOrUpdateProfile(
+            @Valid @RequestBody ProfileRequest profileRequest,
+            Authentication authentication) {
+        
+        // Extract userId from validated JWT (source of truth)
+        UUID userId = getUserIdFromAuthentication(authentication);
+        
+        log.info("Creating or updating profile for user: {}", userId);
+        
+        ProfileResponse response = userProfileService.createOrUpdateProfile(userId, profileRequest);
+        return ApiResponse.success(response, "Profile saved successfully");
     }
 
     /**
@@ -76,10 +93,10 @@ public class UserProfileController {
      * <p>This endpoint retrieves profile information for a specified user. It's used
      * by other services and the frontend to display user information.
      * 
-     * <p>Access control:
+     * <p>Access control (via @PreAuthorize):
      * <ul>
      *   <li>Users can view their own profile</li>
-     *   <li>Admins/Sellers can view customer profiles (for order management)</li>
+     *   <li>Admins/Sellers can view any profile (for order management)</li>
      * </ul>
      * 
      * <p>This endpoint is protected and requires authentication.
@@ -87,17 +104,15 @@ public class UserProfileController {
     @GetMapping("/{userId}")
     @Operation(
         summary = "Get user profile by ID",
-        description = "Retrieves profile information for the specified user ID"
+        description = "Retrieves profile information for the specified user ID. Users can view own profile, admins/sellers can view any profile."
     )
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<Object> getProfile(@PathVariable UUID userId) {
-        // TODO: Implement profile retrieval logic
-        // 1. Extract currentUserId from X-User-Id header
-        // 2. Check authorization: user can view own profile, admins can view any
-        // 3. Find UserProfile entity by userId
-        // 4. Return profile response or 404 if not found
-        // 5. Handle authorization errors (403 Forbidden)
-        return ResponseEntity.ok(null);
+    @PreAuthorize("hasRole('ADMIN') or hasRole('SELLER') or hasRole('STAFF') or #userId.toString() == authentication.principal.toString()")
+    public ApiResponse<ProfileResponse> getProfile(@PathVariable UUID userId) {
+        log.info("Retrieving profile for user: {}", userId);
+        
+        ProfileResponse response = userProfileService.getProfileByUserId(userId);
+        return ApiResponse.success(response, "Profile retrieved successfully");
     }
 
     /**
@@ -114,12 +129,41 @@ public class UserProfileController {
         description = "Retrieves the profile of the currently authenticated user"
     )
     @SecurityRequirement(name = "bearerAuth")
-    public ResponseEntity<Object> getMyProfile() {
-        // TODO: Implement current user profile retrieval
-        // 1. Extract userId from X-User-Id header
-        // 2. Find UserProfile entity by userId
-        // 3. Return profile response or 404 if not found
-        return ResponseEntity.ok(null);
+    public ApiResponse<ProfileResponse> getMyProfile(Authentication authentication) {
+        // Extract userId from validated JWT (source of truth)
+        UUID userId = getUserIdFromAuthentication(authentication);
+        
+        log.info("Getting profile for current user: {}", userId);
+        
+        ProfileResponse response = userProfileService.getProfileByUserId(userId);
+        return ApiResponse.success(response, "Profile retrieved successfully");
+    }
+
+    /**
+     * Extract user ID from Spring Security Authentication
+     * 
+     * <p>The Authentication object is populated by JwtAuthenticationFilter
+     * from validated JWT claims (source of truth).
+     */
+    private UUID getUserIdFromAuthentication(Authentication authentication) {
+        if (authentication == null || !(authentication instanceof JwtAuthenticationToken)) {
+            throw new BusinessException(
+                ErrorCode.SKU_REQUIRED, // TODO: Add UNAUTHORIZED error code
+                "User ID is required. Please ensure you are authenticated."
+            );
+        }
+
+        JwtAuthenticationToken jwtAuth = (JwtAuthenticationToken) authentication;
+        String userIdStr = jwtAuth.getUserId();
+        
+        try {
+            return UUID.fromString(userIdStr);
+        } catch (IllegalArgumentException e) {
+            log.error("Invalid user ID format in JWT: {}", userIdStr);
+            throw new BusinessException(
+                ErrorCode.SKU_REQUIRED,
+                "Invalid user ID format"
+            );
+        }
     }
 }
-
