@@ -148,7 +148,7 @@ public class UserProfileController {
     private UUID getUserIdFromAuthentication(Authentication authentication) {
         if (authentication == null || !(authentication instanceof JwtAuthenticationToken)) {
             throw new BusinessException(
-                ErrorCode.SKU_REQUIRED, // TODO: Add UNAUTHORIZED error code
+                ErrorCode.UNAUTHORIZED,
                 "User ID is required. Please ensure you are authenticated."
             );
         }
@@ -161,7 +161,7 @@ public class UserProfileController {
         } catch (IllegalArgumentException e) {
             log.error("Invalid user ID format in JWT: {}", userIdStr);
             throw new BusinessException(
-                ErrorCode.SKU_REQUIRED,
+                ErrorCode.UNAUTHORIZED,
                 "Invalid user ID format"
             );
         }

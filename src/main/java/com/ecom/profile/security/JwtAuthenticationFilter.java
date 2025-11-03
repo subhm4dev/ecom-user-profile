@@ -1,6 +1,7 @@
 package com.ecom.profile.security;
 
-import com.ecom.profile.service.JwtValidationService;
+import com.ecom.jwt.blocking.BlockingJwtValidationService;
+import com.nimbusds.jwt.JWTClaimsSet;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,7 +28,7 @@ import java.util.List;
 @Slf4j
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private final JwtValidationService jwtValidationService;
+    private final BlockingJwtValidationService jwtValidationService;
 
     @Override
     protected void doFilterInternal(
@@ -50,7 +51,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = authorizationHeader.substring(7); // Remove "Bearer " prefix
 
             // Validate token and extract claims
-            var claims = jwtValidationService.validateToken(token);
+            JWTClaimsSet claims = jwtValidationService.validateToken(token);
             
             // Extract user context from validated JWT claims (source of truth)
             String userId = jwtValidationService.extractUserId(claims);
