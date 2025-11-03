@@ -94,7 +94,7 @@ public class UserProfileServiceImpl implements UserProfileService {
 
         UserProfile profile = userProfileRepository.findByUserId(userId)
             .orElseThrow(() -> new BusinessException(
-                ErrorCode.SKU_REQUIRED, // TODO: Add PROFILE_NOT_FOUND error code
+                ErrorCode.PROFILE_NOT_FOUND,
                 "Profile not found for user: " + userId
             ));
 

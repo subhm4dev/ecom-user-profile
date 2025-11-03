@@ -67,22 +67,36 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // Set authentication in SecurityContext
             SecurityContextHolder.getContext().setAuthentication(authentication);
 
-            // Continue filter chain
-            filterChain.doFilter(request, response);
-
         } catch (IllegalArgumentException e) {
+            // JWT validation failed - this is an authentication error
             log.warn("JWT validation failed: {}", e.getMessage());
-            // Clear SecurityContext
             SecurityContextHolder.clearContext();
             // Continue filter chain - Spring Security will handle unauthorized access
             filterChain.doFilter(request, response);
+            return;
+        } catch (RuntimeException e) {
+            // JWT validation failed (e.g., invalid token, expired, etc.)
+            log.warn("JWT validation failed: {}", e.getMessage(), e);
+            SecurityContextHolder.clearContext();
+            // Continue filter chain - Spring Security will handle unauthorized access
+            filterChain.doFilter(request, response);
+            return;
         } catch (Exception e) {
+            // Catch-all for any other checked exceptions during JWT validation
             log.error("Unexpected error during JWT authentication", e);
             SecurityContextHolder.clearContext();
             filterChain.doFilter(request, response);
+            return;
+        }
+
+        // If we get here, authentication was successful
+        // Continue filter chain - any exceptions from downstream (like BusinessException)
+        // will be handled by GlobalExceptionHandler, not this filter
+        try {
+            filterChain.doFilter(request, response);
         } finally {
-            // Clean up SecurityContext after request (stateless)
-            // Actually, we keep it for the request lifecycle
+            // Optional: Clear SecurityContext after request completes
+            // (Spring Security usually does this automatically, but being explicit)
         }
     }
 

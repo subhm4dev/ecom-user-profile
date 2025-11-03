@@ -9,7 +9,7 @@ spring:
       fail-fast: false
   # Local fallback configuration
   datasource:
-    url: jdbc:postgresql://localhost:5432/ecom_db
+    url: jdbc:postgresql://localhost:5432/ecom_user_profile
     username: postgres
     password: postgres
   jpa:
