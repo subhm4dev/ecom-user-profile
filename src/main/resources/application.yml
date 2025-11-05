@@ -33,6 +33,7 @@ spring:
 
 # JWT Configuration
 jwt:
+  enabled: true
   identity-service-url: ${IDENTITY_SERVICE_URL:http://localhost:8081}
   jwks-endpoint: /.well-known/jwks.json
   jwks-cache-refresh-interval-ms: ${JWKS_CACHE_REFRESH_INTERVAL_MS:300000}  # 5 minutes
